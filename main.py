@@ -138,14 +138,13 @@ async def top(interaction: discord.Interaction):
 
     for i, (user_id, streak) in enumerate(rows, start=1):
 
-        user = bot.get_user(user_id)
+    try:
+        user = await bot.fetch_user(user_id)
+        name = user.display_name
+    except:
+        name = str(user_id)
 
-        if user:
-            name = user.display_name
-        else:
-            name = str(user_id)
-
-        text += f"{i}. {name} — 🔥 {streak}\n"
+    text += f"{i}. {name} — 🔥 {streak}\n"
 
     await interaction.response.send_message(text)
 
