@@ -4,7 +4,9 @@ from discord import app_commands
 import sqlite3
 from datetime import datetime, timedelta
 
-TOKEN = "DISCORD_BOT_TOKEN"
+import os
+
+TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
