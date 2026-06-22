@@ -1,9 +1,7 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
 import sqlite3
-from datetime import datetime, timedelta
-
+from datetime import datetime
 import os
 
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -52,17 +50,23 @@ async def on_message(message):
     row = cursor.fetchone()
 
     if row is None:
+
         cursor.execute(
             "INSERT INTO streaks VALUES (?, ?, ?)",
             (user_id, 1, str(today))
         )
+
         db.commit()
 
         await message.add_reaction("🔥")
 
     else:
+
         streak, last_post = row
-        last_post = datetime.strptime(last_post, "%Y-%m-%d").date()
+        last_post = datetime.strptime(
+            last_post,
+            "%Y-%m-%d"
+        ).date()
 
         days = (today - last_post).days
 
@@ -70,13 +74,17 @@ async def on_message(message):
             pass
 
         elif days == 1:
+
             streak += 1
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE streaks
                 SET streak=?, last_post=?
                 WHERE user_id=?
-            """, (streak, str(today), user_id))
+                """,
+                (streak, str(today), user_id)
+            )
 
             db.commit()
 
@@ -85,13 +93,17 @@ async def on_message(message):
             )
 
         else:
+
             streak = 1
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE streaks
                 SET streak=?, last_post=?
                 WHERE user_id=?
-            """, (streak, str(today), user_id))
+                """,
+                (streak, str(today), user_id)
+            )
 
             db.commit()
 
@@ -102,7 +114,10 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-@bot.tree.command(name="streak", description="Näytä oma streak")
+@bot.tree.command(
+    name="streak",
+    description="Näytä oma streak"
+)
 async def streak(interaction: discord.Interaction):
 
     cursor.execute(
@@ -113,16 +128,22 @@ async def streak(interaction: discord.Interaction):
     row = cursor.fetchone()
 
     if row:
+
         await interaction.response.send_message(
             f"🔥 Sinulla on {row[0]} päivän streak."
         )
+
     else:
+
         await interaction.response.send_message(
             "Et ole aloittanut streakia vielä."
         )
 
 
-@bot.tree.command(name="top", description="Top streakit")
+@bot.tree.command(
+    name="top",
+    description="Top streakit"
+)
 async def top(interaction: discord.Interaction):
 
     cursor.execute("""
@@ -138,13 +159,14 @@ async def top(interaction: discord.Interaction):
 
     for i, (user_id, streak) in enumerate(rows, start=1):
 
-    try:
-        user = await bot.fetch_user(user_id)
-        name = user.display_name
-    except:
-        name = str(user_id)
+        try:
+            user = await bot.fetch_user(user_id)
+            name = user.display_name
 
-    text += f"{i}. {name} — 🔥 {streak}\n"
+        except Exception:
+            name = str(user_id)
+
+        text += f"{i}. {name} — 🔥 {streak}\n"
 
     await interaction.response.send_message(text)
 
