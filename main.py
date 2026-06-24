@@ -18,9 +18,14 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS streaks (
     user_id INTEGER PRIMARY KEY,
     streak INTEGER,
-    last_post TEXT
+    last_post TEXT,
+    points INTEGER DEFAULT 0,
+    text_done INTEGER DEFAULT 0,
+    image_done INTEGER DEFAULT 0,
+    music_done INTEGER DEFAULT 0
 )
 """)
+
 db.commit()
 
 
@@ -40,21 +45,56 @@ async def on_message(message):
         return
 
     user_id = message.author.id
-    today = datetime.utcnow().date()
+    today = str(datetime.utcnow().date())
 
-    cursor.execute(
-        "SELECT streak, last_post FROM streaks WHERE user_id=?",
-        (user_id,)
-    )
+    cursor.execute("""
+        SELECT streak, last_post, points,
+               text_done, image_done, music_done
+        FROM streaks
+        WHERE user_id=?
+    """, (user_id,))
 
     row = cursor.fetchone()
 
+    has_text = len(message.content.strip()) > 0
+    has_image = len(message.attachments) > 0
+
+    music_sites = [
+        "spotify.com",
+        "youtube.com",
+        "youtu.be",
+        "soundcloud.com"
+    ]
+
+    has_music = any(
+        site in message.content.lower()
+        for site in music_sites
+    )
+
     if row is None:
 
-        cursor.execute(
-            "INSERT INTO streaks VALUES (?, ?, ?)",
-            (user_id, 1, str(today))
-        )
+        points = 0
+
+        text_done = 1 if has_text else 0
+        image_done = 1 if has_image else 0
+        music_done = 1 if has_music else 0
+
+        points += text_done
+        points += image_done
+        points += music_done
+
+        cursor.execute("""
+            INSERT INTO streaks
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user_id,
+            1,
+            today,
+            points,
+            text_done,
+            image_done,
+            music_done
+        ))
 
         db.commit()
 
@@ -62,54 +102,82 @@ async def on_message(message):
 
     else:
 
-        streak, last_post = row
-        last_post = datetime.strptime(
-            last_post,
-            "%Y-%m-%d"
-        ).date()
+        streak, last_post, points, text_done, image_done, music_done = row
 
-        days = (today - last_post).days
+        if last_post != today:
 
-        if days == 0:
-            pass
+            last_date = datetime.strptime(
+                last_post,
+                "%Y-%m-%d"
+            ).date()
 
-        elif days == 1:
+            current_date = datetime.strptime(
+                today,
+                "%Y-%m-%d"
+            ).date()
 
-            streak += 1
+            days = (current_date - last_date).days
 
-            cursor.execute(
-                """
-                UPDATE streaks
-                SET streak=?, last_post=?
-                WHERE user_id=?
-                """,
-                (streak, str(today), user_id)
-            )
+            if days == 1:
 
-            db.commit()
+                streak += 1
 
-            await message.reply(
-                f"🔥 Streak kasvoi! Nyt {streak} päivää putkeen."
-            )
+                await message.reply(
+                    f"🔥 Streak kasvoi! Nyt {streak} päivää putkeen."
+                )
 
-        else:
+            else:
 
-            streak = 1
+                streak = 1
 
-            cursor.execute(
-                """
-                UPDATE streaks
-                SET streak=?, last_post=?
-                WHERE user_id=?
-                """,
-                (streak, str(today), user_id)
-            )
+                await message.reply(
+                    "💔 Putki katkesi. Aloitit uuden streakin!"
+                )
 
-            db.commit()
+            text_done = 0
+            image_done = 0
+            music_done = 0
 
-            await message.reply(
-                "💔 Putki katkesi. Aloitit uuden streakin!"
-            )
+        earned = 0
+
+        if has_text and text_done == 0:
+            points += 1
+            earned += 1
+            text_done = 1
+
+        if has_image and image_done == 0:
+            points += 1
+            earned += 1
+            image_done = 1
+
+        if has_music and music_done == 0:
+            points += 1
+            earned += 1
+            music_done = 1
+
+        cursor.execute("""
+            UPDATE streaks
+            SET streak=?,
+                last_post=?,
+                points=?,
+                text_done=?,
+                image_done=?,
+                music_done=?
+            WHERE user_id=?
+        """, (
+            streak,
+            today,
+            points,
+            text_done,
+            image_done,
+            music_done,
+            user_id
+        ))
+
+        db.commit()
+
+        if earned > 0:
+            await message.add_reaction("⭐")
 
     await bot.process_commands(message)
 
@@ -128,45 +196,67 @@ async def streak(interaction: discord.Interaction):
     row = cursor.fetchone()
 
     if row:
-
         await interaction.response.send_message(
             f"🔥 Sinulla on {row[0]} päivän streak."
         )
-
     else:
-
         await interaction.response.send_message(
             "Et ole aloittanut streakia vielä."
         )
 
 
 @bot.tree.command(
+    name="points",
+    description="Näytä pisteesi"
+)
+async def points(interaction: discord.Interaction):
+
+    cursor.execute(
+        "SELECT points FROM streaks WHERE user_id=?",
+        (interaction.user.id,)
+    )
+
+    row = cursor.fetchone()
+
+    if row:
+        await interaction.response.send_message(
+            f"⭐ Sinulla on {row[0]} pistettä."
+        )
+    else:
+        await interaction.response.send_message(
+            "Ei pisteitä vielä."
+        )
+
+
+@bot.tree.command(
     name="top",
-    description="Top streakit"
+    description="Top pisteet"
 )
 async def top(interaction: discord.Interaction):
 
     cursor.execute("""
-        SELECT user_id, streak
+        SELECT user_id, points, streak
         FROM streaks
-        ORDER BY streak DESC
+        ORDER BY points DESC
         LIMIT 10
     """)
 
     rows = cursor.fetchall()
 
-    text = "🏆 Top Streakit\n\n"
+    text = "🏆 Top Pisteet\n\n"
 
-    for i, (user_id, streak) in enumerate(rows, start=1):
+    for i, (user_id, points, streak) in enumerate(rows, start=1):
 
         try:
             user = await bot.fetch_user(user_id)
             name = user.display_name
-
-        except Exception:
+        except:
             name = str(user_id)
 
-        text += f"{i}. {name} — 🔥 {streak}\n"
+        text += (
+            f"{i}. {name} — ⭐ {points} "
+            f"(🔥 {streak})\n"
+        )
 
     await interaction.response.send_message(text)
 
